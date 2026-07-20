@@ -13,4 +13,7 @@
 #include <string.h>
 #include <errno.h>
 
+// Standard C Networking Utilities
+#include <arpa/inet.h>
+
 #endif

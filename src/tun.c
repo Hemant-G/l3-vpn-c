@@ -1,6 +1,7 @@
 #include "linux_net.h"
 #include "tun.h"
 
+// Allocate a TUN device (dev) and return the file descriptor
 int tun_alloc(char *dev)
 {
    struct ifreq ifr;
