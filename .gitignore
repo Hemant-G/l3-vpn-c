@@ -1,0 +1,15 @@
+# Build & Compiled Binaries
+build/
+
+# Object files and libraries
+*.o
+*.a
+*.so
+*.dylib
+
+# Executables
+*.out
+main
+
+# VS Code
+.vscode/
