@@ -16,4 +16,8 @@
 // Standard C Networking Utilities
 #include <arpa/inet.h>
 
+// C interface for epoll
+#include <sys/epoll.h>
+    
+
 #endif
