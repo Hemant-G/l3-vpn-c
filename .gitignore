@@ -1,5 +1,6 @@
 # Build & Compiled Binaries
 build/
+config/
 
 # Object files and libraries
 *.o

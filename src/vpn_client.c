@@ -2,14 +2,60 @@
 #include "tun.h"
 #include "socket.h"
 
-#define BUF_SIZE 212992
+#define BUF_SIZE 2048
+
+// Libsodium 
+#include <sodium.h>
+#define ADDITIONAL_DATA (const unsigned char *) "123456"
+#define ADDITIONAL_DATA_LEN 6
+
+// Key exchange 
+unsigned char client_pk[crypto_kx_PUBLICKEYBYTES], client_sk[crypto_kx_SECRETKEYBYTES];
+unsigned char client_rx[crypto_kx_SESSIONKEYBYTES], client_tx[crypto_kx_SESSIONKEYBYTES];
+
+unsigned char server_pk[crypto_kx_PUBLICKEYBYTES];
+
+//Nonce, key, and ciphertext buffers
+unsigned char nonce[crypto_aead_chacha20poly1305_IETF_NPUBBYTES];
+unsigned char ciphertext[BUF_SIZE + crypto_aead_chacha20poly1305_IETF_ABYTES];
+unsigned long long ciphertext_len;
+unsigned char decrypted[BUF_SIZE];
+unsigned long long decrypted_len;
 
 int main(int argc, char *argv[]){
+    // Initialize libsodium
+    if (sodium_init() < 0) {
+        fprintf(stderr, "Failed to initialize libsodium\n");
+        return 1;
+    }
+    
+    // Load keys from config files
+    if (load_key("config/server_public.key", server_pk, crypto_kx_PUBLICKEYBYTES) != 0) {
+        fprintf(stderr, "Failed to load server public key\n");
+        return 1;
+    }
+
+    if (load_key("config/client_private.key", client_sk, crypto_kx_SECRETKEYBYTES) != 0) {
+        fprintf(stderr, "Failed to load client private key\n");
+        return 1;
+    }
+
+    if (load_key("config/client_public.key", client_pk, crypto_kx_PUBLICKEYBYTES) != 0) {
+        fprintf(stderr, "Failed to load client public key\n");
+        return 1;
+    }
+
+    // Key exchange 
+    if (crypto_kx_client_session_keys(client_rx, client_tx, 
+                    client_pk, client_sk, server_pk) != 0) {
+        fprintf(stderr, "Failed to derive session keys\n");
+        return 1;
+    }
 
     // Allocate a TUN device
     char tun_name[IFNAMSIZ] = "tun0";
     int fd = tun_alloc(tun_name);
-    unsigned char buffer[2048]; 
+    unsigned char buffer[BUF_SIZE]; 
 
     if (fd < 0) return 1;
 
@@ -76,28 +122,61 @@ int main(int argc, char *argv[]){
 
                 printf("\nReceived Packet (%zd bytes)\n", nread);
 
-                // Send the packets over the UDP socket
-                send(udp_fd, buffer, nread, 0);
+                // Encrypt the packet using libsodium
+                randombytes_buf(nonce, sizeof nonce);
+
+                if (crypto_aead_chacha20poly1305_ietf_encrypt(ciphertext, &ciphertext_len,
+                                                        buffer, nread,
+                                                        NULL, 0,
+                                                        NULL, nonce, client_tx) != 0) {
+                    fprintf(stderr, "Encryption failed\n");
+                    continue;
+                }
+
+                // Add the nonce to the ciphertext for sending
+                unsigned char packet[sizeof(nonce) + sizeof(ciphertext)];
+
+                memcpy(packet, nonce, sizeof(nonce));
+                memcpy(packet + sizeof(nonce), ciphertext, ciphertext_len);
+
+                size_t packet_len = sizeof(nonce) + ciphertext_len;
+
+                // Send the encrypted message + nounce packets over the UDP socket
+                send(udp_fd, packet, packet_len, 0);
                 
             }
 
             if(ready_fd == udp_fd){
                 // Receive packets from UDP socket
-                ssize_t nread = recvfrom(ready_fd, buffer, sizeof(buffer), 0, (struct sockaddr *)&server_addr, &(socklen_t){sizeof(server_addr)});
+                ssize_t nread = recv(ready_fd, buffer, sizeof(buffer), 0);
                 if (nread < 0) {
-                    perror("recvfrom error");
+                    perror("recvf error");
                     break;
                 }
 
                 // Print all received bytes in hex
-                printf("Buffer (%zd bytes): ", nread);
-                for (int i = 0; i < nread; i++) {
-                    printf("%02x ", buffer[i]);
-                }
-                printf("\n");
+                // printf("Buffer (%zd bytes): ", nread);
+                // for (int i = 0; i < nread; i++) {
+                //     printf("%02x ", buffer[i]);
+                // }
+                // printf("\n");
 
-                // Write the received packet to the TUN device
-                ssize_t nwritten = write(fd, buffer, nread);
+                // Extract the nonce from the received packet
+                memcpy(nonce, buffer, sizeof(nonce));
+                unsigned char *received_ciphertext = buffer + sizeof(nonce);
+                size_t received_ciphertext_len = nread - sizeof(nonce);
+
+                if (crypto_aead_chacha20poly1305_ietf_decrypt(decrypted, &decrypted_len,
+                                              NULL,
+                                              received_ciphertext, received_ciphertext_len,
+                                              NULL, 0,
+                                              nonce, client_rx) != 0) {
+                    fprintf(stderr, "Decryption failed\n");
+                    continue;
+                }
+
+                // // Write the packet to the TUN device
+                ssize_t nwritten = write(fd, decrypted, decrypted_len);
                 if (nwritten < 0) {
                     perror("write to tun0 failed");
                 } else {
