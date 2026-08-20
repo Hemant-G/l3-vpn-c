@@ -165,12 +165,6 @@ Stop the client and server with `Ctrl+C`, then remove the namespaces, bridge, ro
 make teardown
 ```
 
-To clean the generated network state and rebuild artifacts, use:
-
-```sh
-make clean
-```
-
 ## Configuration notes
 
 Network values are defined at the top of the Makefile, including namespace names, interface names, physical addresses, VPN addresses, and the WAN interface. The UDP server address and port are currently defined directly in the C sources:

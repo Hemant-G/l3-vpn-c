@@ -143,5 +143,3 @@ teardown:
 	-sudo ip netns del $(SERVER_NS) 2>/dev/null || true
 	-sudo ip link del $(BRIDGE) 2>/dev/null || true
 	@echo "[-] Teardown complete!"
-
-clean: teardown	
