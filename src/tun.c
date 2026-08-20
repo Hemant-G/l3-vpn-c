@@ -7,7 +7,7 @@ int tun_alloc(char *dev)
    struct ifreq ifr;
    int fd, err;
 
-   if ((fd = open("/dev/net/tun", O_RDWR)) < 0)
+   if ((fd = open("/dev/net/tun", O_RDWR | O_NONBLOCK)) < 0)
    {
       perror("Opening /dev/net/tun");
       printf("Errorno: %d", errno);
